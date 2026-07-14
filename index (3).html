@@ -1,0 +1,368 @@
+// App State
+let state = {
+  malware: 'lockbit',
+  isDefended: false,
+  attackState: 'original', // 'original' | 'animating' | 'evaded'
+  budget: 40,
+  length: 6,
+  mctsIteration: 0
+};
+
+// Assembly Templates
+const assemblyTemplates = {
+  lockbit: {
+    original: [
+      '<span class="hl-label">sub_41B000:</span>',
+      '  <span class="hl-op">push</span> eax',
+      '  <span class="hl-op">call</span> <span class="hl-ins">sub_41B2F4</span>         <span class="hl-comment">; Target CALL instruction</span>',
+      '  <span class="hl-op">lea</span>  eax, [ebp+var_1]',
+      '  <span class="hl-op">push</span> eax',
+      '  <span class="hl-op">call</span> sub_41B348',
+      '  <span class="hl-op">mov</span>  [ebp+var_2], eax',
+      '  <span class="hl-op">call</span> sub_41B204'
+    ],
+    evaded: [
+      '<span class="hl-label">sub_41B000 (v_fore):</span>',
+      '  <span class="hl-op">push</span> eax',
+      '  <span class="hl-op">jmp</span>  <span class="hl-ins">loc_42C400</span>         <span class="hl-comment">; Redirected to slack/new section</span>',
+      '',
+      '<span class="hl-label">loc_42C400 (v_mid - Mutated Block):</span>',
+      '  <span class="hl-op">call</span> <span class="hl-ins">sub_41B2F4</span>         <span class="hl-comment">; Original CALL executed safely</span>',
+      '  <span class="hl-op">dec</span>  ah                 <span class="hl-comment">; Injected Semantic NOP (arithmetic)</span>',
+      '  <span class="hl-op">inc</span>  ah                 <span class="hl-comment">; Injected Semantic NOP (arithmetic)</span>',
+      '  <span class="hl-op">jmp</span>  <span class="hl-ins">loc_41B033</span>         <span class="hl-comment">; Link back to normal flow</span>',
+      '',
+      '<span class="hl-label">loc_41B033 (v_post):</span>',
+      '  <span class="hl-op">lea</span>  eax, [ebp+var_1]',
+      '  <span class="hl-op">push</span> eax',
+      '  <span class="hl-op">call</span> sub_41B348',
+      '  <span class="hl-op">mov</span>  [ebp+var_2], eax',
+      '  <span class="hl-op">call</span> sub_41B204'
+    ]
+  },
+  wannacry: {
+    original: [
+      '<span class="hl-label">sub_401A40:</span>',
+      '  <span class="hl-op">push</span> ecx',
+      '  <span class="hl-op">call</span> <span class="hl-ins">sub_4012B0</span>         <span class="hl-comment">; Target CALL instruction</span>',
+      '  <span class="hl-op">add</span>  esp, 10h',
+      '  <span class="hl-op">mov</span>  edx, esi',
+      '  <span class="hl-op">cmp</span>  edx, 0FEh',
+      '  <span class="hl-op">jb</span>   loc_40197E'
+    ],
+    evaded: [
+      '<span class="hl-label">sub_401A40 (v_fore):</span>',
+      '  <span class="hl-op">push</span> ecx',
+      '  <span class="hl-op">jmp</span>  <span class="hl-ins">loc_40B000</span>         <span class="hl-comment">; Redirected to new section</span>',
+      '',
+      '<span class="hl-label">loc_40B000 (v_mid - Mutated Block):</span>',
+      '  <span class="hl-op">call</span> <span class="hl-ins">sub_4012B0</span>         <span class="hl-comment">; Original CALL executed safely</span>',
+      '  <span class="hl-op">add</span>  bh, 89h            <span class="hl-comment">; Injected Semantic NOP (logical)</span>',
+      '  <span class="hl-op">sub</span>  bh, 89h            <span class="hl-comment">; Injected Semantic NOP (logical)</span>',
+      '  <span class="hl-op">jmp</span>  <span class="hl-ins">loc_401A53</span>         <span class="hl-comment">; Link back to normal flow</span>',
+      '',
+      '<span class="hl-label">loc_401A53 (v_post):</span>',
+      '  <span class="hl-op">add</span>  esp, 10h',
+      '  <span class="hl-op">mov</span>  edx, esi',
+      '  <span class="hl-op">cmp</span>  edx, 0FEh',
+      '  <span class="hl-op">jb</span>   loc_40197E'
+    ]
+  },
+  gandcrab: {
+    original: [
+      '<span class="hl-label">sub_4051A0:</span>',
+      '  <span class="hl-op">push</span> edi',
+      '  <span class="hl-op">call</span> <span class="hl-ins">sub_4051B0</span>         <span class="hl-comment">; Target CALL instruction</span>',
+      '  <span class="hl-op">test</span> eax, eax',
+      '  <span class="hl-op">jz</span>   loc_405200',
+      '  <span class="hl-op">mov</span>  ebx, 0A4h'
+    ],
+    evaded: [
+      '<span class="hl-label">sub_4051A0 (v_fore):</span>',
+      '  <span class="hl-op">push</span> edi',
+      '  <span class="hl-op">jmp</span>  <span class="hl-ins">loc_40E000</span>         <span class="hl-comment">; Redirected to slack space</span>',
+      '',
+      '<span class="hl-label">loc_40E000 (v_mid - Mutated Block):</span>',
+      '  <span class="hl-op">call</span> <span class="hl-ins">sub_4051B0</span>         <span class="hl-comment">; Original CALL executed safely</span>',
+      '  <span class="hl-op">xor</span>  ecx, ecx           <span class="hl-comment">; Injected Semantic NOP (comparison)</span>',
+      '  <span class="hl-op">mov</span>  edx, edx           <span class="hl-comment">; Injected Semantic NOP (comparison)</span>',
+      '  <span class="hl-op">jmp</span>  <span class="hl-ins">loc_4051C4</span>         <span class="hl-comment">; Link back to normal flow</span>',
+      '',
+      '<span class="hl-label">loc_4051C4 (v_post):</span>',
+      '  <span class="hl-op">test</span> eax, eax',
+      '  <span class="hl-op">jz</span>   loc_405200',
+      '  <span class="hl-op">mov</span>  ebx, 0A4h'
+    ]
+  }
+};
+
+// Canvas Setup
+const canvas = document.getElementById('cfg-canvas');
+const ctx = canvas.getContext('2d');
+const nodeCountEl = document.getElementById('canvas-node-count');
+
+// UI Elements
+const malwareSelect = document.getElementById('malware-select');
+const mctsBudgetSlider = document.getElementById('mcts-budget-slider');
+const mctsBudgetVal = document.getElementById('mcts-budget-val');
+const mctsLengthSlider = document.getElementById('mcts-length-slider');
+const mctsLengthVal = document.getElementById('mcts-length-val');
+const assemblyBox = document.getElementById('assembly-box');
+const codeStateTag = document.getElementById('code-state-tag');
+const runAttackBtn = document.getElementById('run-attack-btn');
+const resetAttackBtn = document.getElementById('reset-attack-btn');
+const toggleDefenseBtn = document.getElementById('toggle-defense-btn');
+const modelStatusBadge = document.getElementById('model-status-badge');
+const metricDecision = document.getElementById('metric-decision');
+const metricProbability = document.getElementById('metric-probability');
+const probabilityBar = document.getElementById('probability-bar');
+const metricTpr = document.getElementById('metric-tpr');
+
+// Defense Bars
+const barMmoBase = document.getElementById('bar-mmo-base');
+const barSrlBase = document.getElementById('bar-srl-base');
+const barMalguiseBase = document.getElementById('bar-malguise-base');
+
+// Initialize Elements
+function init() {
+  updateUI();
+  drawCFG();
+}
+
+// Update UI Text & Elements
+function updateUI() {
+  mctsBudgetVal.textContent = state.budget;
+  mctsLengthVal.textContent = state.length;
+
+  // Code Block Update
+  const codeLines = assemblyTemplates[state.malware][state.attackState === 'evaded' ? 'evaded' : 'original'];
+  assemblyBox.innerHTML = codeLines.join('\n');
+  codeStateTag.textContent = state.attackState === 'evaded' ? 'Adversarial Evasion' : 'OriginalPE';
+  codeStateTag.style.color = state.attackState === 'evaded' ? 'var(--accent-magenta)' : 'var(--accent-cyan)';
+
+  // Detector Output calculations based on research papers
+  if (!state.isDefended) {
+    modelStatusBadge.textContent = 'STANDARD MALCONV (UNDEFENDED)';
+    modelStatusBadge.style.color = 'var(--accent-magenta)';
+    toggleDefenseBtn.textContent = 'Switch to Defended Model';
+    metricTpr.textContent = '96.08%';
+
+    if (state.attackState === 'evaded') {
+      metricDecision.textContent = 'BENIGN (EVADED)';
+      metricDecision.className = 'metric-val alert-clean';
+      metricProbability.textContent = '0.1420 (14.20%)';
+      metricProbability.className = 'metric-val alert-clean';
+      probabilityBar.style.width = '14.2%';
+      probabilityBar.className = 'progress-fill clean';
+    } else {
+      metricDecision.textContent = 'MALICIOUS';
+      metricDecision.className = 'metric-val alert-threat';
+      metricProbability.textContent = '0.9840 (98.40%)';
+      metricProbability.className = 'metric-val alert-threat';
+      probabilityBar.style.width = '98.4%';
+      probabilityBar.className = 'progress-fill threat';
+    }
+
+    // Graph bars (Standard Model ASR values from MalGuise Table 3)
+    barMmoBase.style.height = '15.55%';
+    barSrlBase.style.height = '25.38%';
+    barMalguiseBase.style.height = '97.47%';
+
+  } else {
+    modelStatusBadge.textContent = 'ADVERSARIALLY TRAINED MODEL';
+    modelStatusBadge.style.color = 'var(--accent-green)';
+    toggleDefenseBtn.textContent = 'Switch to Standard Model';
+    metricTpr.textContent = '94.62%'; // Slight natural accuracy drop due to adversarial training
+
+    if (state.attackState === 'evaded') {
+      // Under adversarial training, the model successfully detects the attack variant
+      metricDecision.textContent = 'MALICIOUS (DETECTED)';
+      metricDecision.className = 'metric-val alert-threat';
+      metricProbability.textContent = '0.9150 (91.50%)';
+      metricProbability.className = 'metric-val alert-threat';
+      probabilityBar.style.width = '91.5%';
+      probabilityBar.className = 'progress-fill threat';
+    } else {
+      metricDecision.textContent = 'MALICIOUS';
+      metricDecision.className = 'metric-val alert-threat';
+      metricProbability.textContent = '0.9780 (97.80%)';
+      metricProbability.className = 'metric-val alert-threat';
+      probabilityBar.style.width = '97.8%';
+      probabilityBar.className = 'progress-fill threat';
+    }
+
+    // Graph bars (Defended Model ASR values from CMU/Duke/TelAviv paper where success drops to ~5%)
+    barMmoBase.style.height = '3.73%';
+    barSrlBase.style.height = '2.59%';
+    barMalguiseBase.style.height = '5.00%';
+  }
+}
+
+// Canvas Drawer
+function drawCFG() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  if (state.attackState === 'original') {
+    nodeCountEl.textContent = 'Nodes: 2 | Edges: 1';
+
+    // Original basic blocks
+    drawNode(150, 70, 'v (Original)', 'var(--accent-cyan)');
+    drawNode(150, 200, 'v_next', 'var(--text-secondary)');
+    drawArrow(150, 95, 150, 175);
+
+  } else if (state.attackState === 'animating') {
+    nodeCountEl.textContent = `Nodes: Expanding | Iteration: ${state.mctsIteration}/${state.budget}`;
+    
+    // Animate Tree Search (MCTS)
+    ctx.strokeStyle = 'rgba(255, 0, 127, 0.4)';
+    ctx.lineWidth = 1.5;
+
+    // Drawing a branching decision tree representing MCTS searching
+    drawMCTSTree(150, 40, 4, 35, 45);
+
+    // Current best candidate node flashing
+    const pulseRadius = 6 + Math.sin(Date.now() / 100) * 2;
+    ctx.beginPath();
+    ctx.arc(150, 210, pulseRadius, 0, Math.PI * 2);
+    ctx.fillStyle = 'var(--accent-magenta)';
+    ctx.fill();
+
+  } else if (state.attackState === 'evaded') {
+    nodeCountEl.textContent = 'Nodes: 3 | Edges: 2 (Redivided)';
+
+    // Splitted basic blocks
+    drawNode(150, 50, 'v_fore', 'var(--accent-cyan)');
+    drawNode(150, 140, 'v_mid (Slack Space)', 'var(--accent-magenta)');
+    drawNode(150, 230, 'v_post', 'var(--accent-cyan)');
+
+    drawArrow(150, 75, 150, 115);
+    drawArrow(150, 165, 150, 205);
+  }
+}
+
+function drawNode(x, y, label, color) {
+  ctx.fillStyle = 'rgba(6, 7, 10, 0.9)';
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  
+  // Rounded rect
+  const w = 150;
+  const h = 25;
+  ctx.beginPath();
+  ctx.roundRect(x - w/2, y - h/2, w, h, 6);
+  ctx.fill();
+  ctx.stroke();
+
+  // Text
+  ctx.fillStyle = 'var(--text-primary)';
+  ctx.font = '10px "JetBrains Mono"';
+  ctx.textAlign = 'center';
+  ctx.fillText(label, x, y + 3);
+}
+
+function drawArrow(x1, y1, x2, y2) {
+  ctx.strokeStyle = 'var(--text-secondary)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+
+  // Arrowhead
+  const angle = Math.atan2(y2 - y1, x2 - x1);
+  ctx.fillStyle = 'var(--text-secondary)';
+  ctx.beginPath();
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - 8 * Math.cos(angle - Math.PI / 6), y2 - 8 * Math.sin(angle - Math.PI / 6));
+  ctx.lineTo(x2 - 8 * Math.cos(angle + Math.PI / 6), y2 - 8 * Math.sin(angle + Math.PI / 6));
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawMCTSTree(x, y, depth, spacingX, spacingY) {
+  if (depth === 0) return;
+
+  const leftX = x - spacingX;
+  const rightX = x + spacingX;
+  const nextY = y + spacingY;
+
+  ctx.beginPath();
+  ctx.moveTo(x, y + 4);
+  ctx.lineTo(leftX, nextY - 4);
+  ctx.moveTo(x, y + 4);
+  ctx.lineTo(rightX, nextY - 4);
+  ctx.stroke();
+
+  // Node dots
+  ctx.fillStyle = 'var(--text-secondary)';
+  ctx.beginPath();
+  ctx.arc(x, y, 4, 0, Math.PI * 2);
+  ctx.fill();
+
+  drawMCTSTree(leftX, nextY, depth - 1, spacingX * 0.5, spacingY);
+  drawMCTSTree(rightX, nextY, depth - 1, spacingX * 0.5, spacingY);
+}
+
+// Event Listeners
+malwareSelect.addEventListener('change', (e) => {
+  state.malware = e.target.value;
+  state.attackState = 'original';
+  updateUI();
+  drawCFG();
+});
+
+mctsBudgetSlider.addEventListener('input', (e) => {
+  state.budget = parseInt(e.target.value);
+  mctsBudgetVal.textContent = state.budget;
+});
+
+mctsLengthSlider.addEventListener('input', (e) => {
+  state.length = parseInt(e.target.value);
+  mctsLengthVal.textContent = state.length;
+});
+
+toggleDefenseBtn.addEventListener('click', () => {
+  state.isDefended = !state.isDefended;
+  updateUI();
+});
+
+resetAttackBtn.addEventListener('click', () => {
+  state.attackState = 'original';
+  updateUI();
+  drawCFG();
+});
+
+// Run MCTS Evasion Attack Animation
+runAttackBtn.addEventListener('click', () => {
+  if (state.attackState === 'evaded') return;
+  
+  state.attackState = 'animating';
+  state.mctsIteration = 0;
+  runAttackBtn.disabled = true;
+
+  const intervalTime = 1000 / (state.budget / 4); // Adaptive animation speed
+  const timer = setInterval(() => {
+    state.mctsIteration += 1;
+    drawCFG();
+
+    if (state.mctsIteration >= state.budget) {
+      clearInterval(timer);
+      state.attackState = 'evaded';
+      runAttackBtn.disabled = false;
+      updateUI();
+      drawCFG();
+    }
+  }, intervalTime);
+});
+
+// Animation Loop for pulsing effects
+function animate() {
+  if (state.attackState === 'animating') {
+    drawCFG();
+  }
+  requestAnimationFrame(animate);
+}
+
+// Start
+init();
+animate();
